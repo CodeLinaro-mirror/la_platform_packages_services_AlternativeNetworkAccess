@@ -23,6 +23,7 @@ LOCAL_PACKAGE_NAME := ANS
 LOCAL_PRIVATE_PLATFORM_APIS := true
 LOCAL_PRIVILEGED_MODULE := true
 
+INCLUDED_MAKEFILES := $(LOCAL_PATH)/tests/Android.mk
 LOCAL_JAVA_LIBRARIES := telephony-common
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
