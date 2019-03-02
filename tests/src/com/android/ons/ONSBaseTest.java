@@ -13,19 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
  */
-package com.android.ans;
+package com.android.ons;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
 import android.telephony.Rlog;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.test.AndroidTestCase;
 
+import androidx.test.InstrumentationRegistry;
+
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-public abstract class ANSBaseTest extends AndroidTestCase {
+public abstract class ONSBaseTest extends AndroidTestCase {
     protected TelephonyManager mTelephonyManager;
     @Mock
     protected SubscriptionManager mSubscriptionManager;
@@ -35,7 +36,7 @@ public abstract class ANSBaseTest extends AndroidTestCase {
     protected boolean mReady  = false;
     private Object mLock = new Object();
     private static final int MAX_INIT_WAIT_MS = 5000; // 5 seconds
-    private static final String TAG = "ANSBaseTest";
+    private static final String TAG = "ONSBaseTest";
 
     protected void waitUntilReady() {
         waitUntilReady(MAX_INIT_WAIT_MS);
@@ -50,7 +51,7 @@ public abstract class ANSBaseTest extends AndroidTestCase {
                 }
 
                 if (!mReady) {
-                    Rlog.d(TAG, "ANS tests failed to set ready state");
+                    Rlog.d(TAG, "ONS tests failed to set ready state");
                 }
             }
         }

@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
-package com.android.ans;
+package com.android.ons;
 
 import android.content.Context;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Message;
+import android.os.PersistableBundle;
 import android.telephony.AccessNetworkConstants;
+import android.telephony.CarrierConfigManager;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoLte;
 import android.telephony.NetworkScan;
@@ -29,6 +32,7 @@ import android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
 import android.telephony.TelephonyManager;
 import android.telephony.TelephonyScanManager;
+import android.telephony.AvailableNetworkInfo;
 
 import com.android.internal.annotations.VisibleForTesting;
 
@@ -40,12 +44,13 @@ import java.util.concurrent.TimeUnit;
  * Network Scan controller class which will scan for the specific bands as requested and
  * provide results to caller when ready.
  */
-public class ANSNetworkScanCtlr {
-    private static final String LOG_TAG = "ANSNetworkScanCtlr";
+public class ONSNetworkScanCtlr {
+    private static final String LOG_TAG = "ONSNetworkScanCtlr";
     private static final boolean DBG = true;
     private static final int SEARCH_PERIODICITY_SLOW = (int) TimeUnit.MINUTES.toSeconds(5);
     private static final int SEARCH_PERIODICITY_FAST = (int) TimeUnit.MINUTES.toSeconds(1);
     private static final int MAX_SEARCH_TIME = (int) TimeUnit.MINUTES.toSeconds(1);
+    private static final int SCAN_RESTART_TIME = (int) TimeUnit.MINUTES.toMillis(1);
     private final Object mLock = new Object();
 
     /* message  to handle scan responses from modem */
@@ -59,32 +64,13 @@ public class ANSNetworkScanCtlr {
     private NetworkScanRequest mCurrentScanRequest;
     private List<String> mMccMncs;
     private TelephonyManager mTelephonyManager;
+    private CarrierConfigManager configManager;
+    private int mRsrpEntryThreshold;
+    private int mRssnrEntryThreshold;
     @VisibleForTesting
     protected NetworkAvailableCallBack mNetworkAvailableCallBack;
-
-    private Handler mHandler =  new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-                case MSG_SCAN_RESULTS_AVAILABLE:
-                    logDebug("Msg received for scan results");
-                    /* Todo: need to aggregate the results */
-                    analyzeScanResults((List<CellInfo>) msg.obj);
-                    break;
-                case MSG_SCAN_COMPLETE:
-                    logDebug("Msg received for scan complete");
-                    restartScan();
-                    break;
-                case MSG_SCAN_ERROR:
-                    logDebug("Msg received for scan error");
-                    invalidateScanOnError((int) msg.obj);
-                    break;
-                default:
-                    log("invalid message");
-                    break;
-            }
-        }
-    };
+    HandlerThread mThread;
+    private Handler mHandler;
 
     @VisibleForTesting
     public TelephonyScanManager.NetworkScanCallback mNetworkScanCallback =
@@ -105,7 +91,7 @@ public class ANSNetworkScanCtlr {
         public void onComplete() {
             logDebug("Scan completed!");
             Message message = Message.obtain(mHandler, MSG_SCAN_COMPLETE, NetworkScan.SUCCESS);
-            message.sendToTarget();
+            mHandler.sendMessageDelayed(message, SCAN_RESTART_TIME);
         }
 
         @Override
@@ -133,6 +119,19 @@ public class ANSNetworkScanCtlr {
         void onError(int error);
     }
 
+    private int getIntCarrierConfig(String key) {
+        PersistableBundle b = null;
+        if (configManager != null) {
+            // If an invalid subId is used, this bundle will contain default values.
+            b = configManager.getConfig();
+        }
+        if (b != null) {
+            return b.getInt(key);
+        } else {
+            // Return static default defined in CarrierConfigManager.
+            return CarrierConfigManager.getDefaultConfig().getInt(key);
+        }
+    }
 
     /**
      * analyze scan results
@@ -140,20 +139,27 @@ public class ANSNetworkScanCtlr {
      */
     public void analyzeScanResults(List<CellInfo> results) {
         /* Inform registrants about availability of network */
-        if (mIsScanActive && results != null) {
-            List<CellInfo> filteredResults = new ArrayList<CellInfo>();
-            synchronized (mLock) {
-                for (CellInfo cellInfo : results) {
-                    if (mMccMncs.contains(getMccMnc(cellInfo))) {
-                        filteredResults.add(cellInfo);
+        if (!mIsScanActive || results == null) {
+          return;
+        }
+        List<CellInfo> filteredResults = new ArrayList<CellInfo>();
+        synchronized (mLock) {
+            for (CellInfo cellInfo : results) {
+                if (mMccMncs.contains(getMccMnc(cellInfo))) {
+                    if (cellInfo instanceof CellInfoLte) {
+                        int rsrp = ((CellInfoLte) cellInfo).getCellSignalStrength().getRsrp();
+                        logDebug("cell info rsrp: " + rsrp);
+                        // Todo(b/122917491)
+                        if (rsrp >= mRsrpEntryThreshold) {
+                            filteredResults.add(cellInfo);
+                        }
                     }
                 }
             }
-
-            if ((filteredResults.size() >= 1) && (mNetworkAvailableCallBack != null)) {
-                /* Todo: change to aggregate results on success. */
-                mNetworkAvailableCallBack.onNetworkAvailability(filteredResults);
-            }
+        }
+        if ((filteredResults.size() >= 1) && (mNetworkAvailableCallBack != null)) {
+            /* Todo: change to aggregate results on success. */
+            mNetworkAvailableCallBack.onNetworkAvailability(filteredResults);
         }
     }
 
@@ -169,7 +175,7 @@ public class ANSNetworkScanCtlr {
         }
     }
 
-    public ANSNetworkScanCtlr(Context c, TelephonyManager telephonyManager,
+    public ONSNetworkScanCtlr(Context c, TelephonyManager telephonyManager,
             NetworkAvailableCallBack networkAvailableCallBack) {
         init(c, telephonyManager, networkAvailableCallBack);
     }
@@ -180,11 +186,38 @@ public class ANSNetworkScanCtlr {
      * @param telephonyManager Telephony manager instance
      * @param networkAvailableCallBack callback to be called when network selection is done
      */
-    public void init(Context c, TelephonyManager telephonyManager,
+    public void init(Context context, TelephonyManager telephonyManager,
             NetworkAvailableCallBack networkAvailableCallBack) {
         log("init called");
+        mThread = new HandlerThread(LOG_TAG);
+        mThread.start();
+        mHandler =  new Handler(mThread.getLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+                switch (msg.what) {
+                    case MSG_SCAN_RESULTS_AVAILABLE:
+                        logDebug("Msg received for scan results");
+                        /* Todo: need to aggregate the results */
+                        analyzeScanResults((List<CellInfo>) msg.obj);
+                        break;
+                    case MSG_SCAN_COMPLETE:
+                        logDebug("Msg received for scan complete");
+                        restartScan();
+                        break;
+                    case MSG_SCAN_ERROR:
+                        logDebug("Msg received for scan error");
+                        invalidateScanOnError((int) msg.obj);
+                        break;
+                    default:
+                        log("invalid message");
+                        break;
+                }
+            }
+        };
         mTelephonyManager = telephonyManager;
         mNetworkAvailableCallBack = networkAvailableCallBack;
+        configManager = (CarrierConfigManager) context.getSystemService(
+                Context.CARRIER_CONFIG_SERVICE);
     }
 
     /* get mcc mnc from cell info if the cell is for LTE */
@@ -197,7 +230,7 @@ public class ANSNetworkScanCtlr {
         return null;
     }
 
-    private NetworkScanRequest createNetworkScanRequest(List<SubscriptionInfo> subscriptionInfos,
+    private NetworkScanRequest createNetworkScanRequest(ArrayList<AvailableNetworkInfo> availableNetworks,
             int periodicity) {
         RadioAccessSpecifier[] ras = new RadioAccessSpecifier[1];
         int[] bands = new int[1];
@@ -207,8 +240,8 @@ public class ANSNetworkScanCtlr {
 
         ArrayList<String> mccMncs = new ArrayList<String>();
         /* retrieve mcc mncs for a subscription id */
-        for (SubscriptionInfo subscriptionInfo : subscriptionInfos) {
-            mccMncs.add(subscriptionInfo.getMccString() + subscriptionInfo.getMncString());
+        for (AvailableNetworkInfo availableNetwork : availableNetworks) {
+            mccMncs.addAll(availableNetwork.getMccMncs());
         }
 
         /* create network scan request */
@@ -224,23 +257,12 @@ public class ANSNetworkScanCtlr {
     }
 
     /**
-     * start high interval network scan
-     * @param subscriptionInfos list of subscriptions for which the scanning needs to be started.
-     * @return true if successfully accepted request.
-     */
-    public boolean startSlowNetworkScan(List<SubscriptionInfo> subscriptionInfos) {
-        NetworkScanRequest networkScanRequest = createNetworkScanRequest(subscriptionInfos,
-                SEARCH_PERIODICITY_SLOW);
-        return startNetworkScan(networkScanRequest);
-    }
-
-    /**
      * start less interval network scan
-     * @param subscriptionInfos list of subscriptions for which the scanning needs to be started.
+     * @param availableNetworks list of subscriptions for which the scanning needs to be started.
      * @return true if successfully accepted request.
      */
-    public boolean startFastNetworkScan(List<SubscriptionInfo> subscriptionInfos) {
-        NetworkScanRequest networkScanRequest = createNetworkScanRequest(subscriptionInfos,
+    public boolean startFastNetworkScan(ArrayList<AvailableNetworkInfo> availableNetworks) {
+        NetworkScanRequest networkScanRequest = createNetworkScanRequest(availableNetworks,
                 SEARCH_PERIODICITY_FAST);
         return startNetworkScan(networkScanRequest);
     }
@@ -257,6 +279,13 @@ public class ANSNetworkScanCtlr {
             /* Need to stop current scan if we already have one */
             stopNetworkScan();
 
+            mRsrpEntryThreshold =
+                getIntCarrierConfig(
+                    CarrierConfigManager.KEY_OPPORTUNISTIC_NETWORK_ENTRY_THRESHOLD_RSRP_INT);
+            mRssnrEntryThreshold =
+                getIntCarrierConfig(
+                    CarrierConfigManager.KEY_OPPORTUNISTIC_NETWORK_ENTRY_THRESHOLD_RSSNR_INT);
+
             /* start new scan */
             networkScan = mTelephonyManager.requestNetworkScan(networkScanRequest,
                     mNetworkScanCallback);
@@ -272,6 +301,7 @@ public class ANSNetworkScanCtlr {
 
     private void restartScan() {
         NetworkScan networkScan;
+        logDebug("restartScan");
         synchronized (mLock) {
             if (mCurrentScanRequest != null) {
                 networkScan = mTelephonyManager.requestNetworkScan(mCurrentScanRequest,

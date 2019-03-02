@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License
  */
-package com.android.ans;
+package com.android.ons;
 
 import static org.junit.Assert.*;
 import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.*;
 
 import android.os.Looper;
+import android.telephony.AvailableNetworkInfo;
 import android.telephony.CellIdentityLte;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoLte;
@@ -33,11 +34,12 @@ import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.sql.Array;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ANSNetworkScanCtlrTest extends ANSBaseTest {
-    private ANSNetworkScanCtlr mANSNetworkScanCtlr;
+public class ONSNetworkScanCtlrTest extends ONSBaseTest {
+    private ONSNetworkScanCtlr mONSNetworkScanCtlr;
     private NetworkScan mNetworkScan;
     private List<CellInfo> mResults;
     private int mError;
@@ -46,7 +48,7 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp("ANSTest");
+        super.setUp("ONSTest");
         mLooper = null;
         mNetworkScan = new NetworkScan(1, 1);
         doReturn(mNetworkScan).when(mMockTelephonyManager).requestNetworkScan(anyObject(), anyObject());
@@ -63,10 +65,11 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
 
     @Test
     public void testStartFastNetworkScan() {
-        List<SubscriptionInfo> subscriptionInfoList = new ArrayList<SubscriptionInfo>();
-        SubscriptionInfo subscriptionInfo = new SubscriptionInfo(1, "", 1, "TMO", "TMO", 1, 1,
-                "123", 1, null, "310", "210", "", false, null, "1");
-        subscriptionInfoList.add(subscriptionInfo);
+        ArrayList<String> mccMncs = new ArrayList<>();
+        mccMncs.add("310210");
+        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs);
+        ArrayList<AvailableNetworkInfo> availableNetworkInfos = new ArrayList<AvailableNetworkInfo>();
+        availableNetworkInfos.add(availableNetworkInfo);
         List<CellInfo> expectedResults = new ArrayList<CellInfo>();
         CellIdentityLte cellIdentityLte = new CellIdentityLte(310, 210, 1, 1, 1);
         CellInfoLte cellInfoLte = new CellInfoLte();
@@ -74,13 +77,13 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
         expectedResults.add((CellInfo)cellInfoLte);
         mReady = false;
 
-        // initializing ANSNetworkScanCtlr
+        // initializing ONSNetworkScanCtlr
         new Thread(new Runnable() {
             @Override
             public void run() {
                 Looper.prepare();
-                mANSNetworkScanCtlr = new ANSNetworkScanCtlr(mContext, mMockTelephonyManager,
-                        new ANSNetworkScanCtlr.NetworkAvailableCallBack() {
+                mONSNetworkScanCtlr = new ONSNetworkScanCtlr(mContext, mMockTelephonyManager,
+                        new ONSNetworkScanCtlr.NetworkAvailableCallBack() {
                         @Override
                         public void onNetworkAvailability(List<CellInfo> results) {
                             mResults = results;
@@ -103,33 +106,34 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
         mReady = false;
 
         // Testing startFastNetworkScan, onNetworkAvailability should be called with expectedResults
-        mANSNetworkScanCtlr.startFastNetworkScan(subscriptionInfoList);
-        mANSNetworkScanCtlr.mNetworkScanCallback.onResults(expectedResults);
+        mONSNetworkScanCtlr.startFastNetworkScan(availableNetworkInfos);
+        mONSNetworkScanCtlr.mNetworkScanCallback.onResults(expectedResults);
         waitUntilReady(100);
         assertEquals(expectedResults, mResults);
     }
 
     @Test
     public void testStartFastNetworkScanFail() {
-        List<SubscriptionInfo> subscriptionInfoList = new ArrayList<SubscriptionInfo>();
-        SubscriptionInfo subscriptionInfo = new SubscriptionInfo(1, "", 1, "TMO", "TMO", 1, 1,
-                "123", 1, null, "310", "210", "", false, null, "1");
-        subscriptionInfoList.add(subscriptionInfo);
         List<CellInfo> expectedResults = new ArrayList<CellInfo>();
         CellIdentityLte cellIdentityLte = new CellIdentityLte(310, 210, 1, 1, 1);
         CellInfoLte cellInfoLte = new CellInfoLte();
         cellInfoLte.setCellIdentity(cellIdentityLte);
         expectedResults.add((CellInfo)cellInfoLte);
+        ArrayList<String> mccMncs = new ArrayList<>();
+        mccMncs.add("310210");
+        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs);
+        ArrayList<AvailableNetworkInfo> availableNetworkInfos = new ArrayList<AvailableNetworkInfo>();
+        availableNetworkInfos.add(availableNetworkInfo);
         mReady = false;
         mError = NetworkScan.SUCCESS;
 
-        // initializing ANSNetworkScanCtlr
+        // initializing ONSNetworkScanCtlr
         new Thread(new Runnable() {
             @Override
             public void run() {
                 Looper.prepare();
-                mANSNetworkScanCtlr = new ANSNetworkScanCtlr(mContext, mMockTelephonyManager,
-                        new ANSNetworkScanCtlr.NetworkAvailableCallBack() {
+                mONSNetworkScanCtlr = new ONSNetworkScanCtlr(mContext, mMockTelephonyManager,
+                        new ONSNetworkScanCtlr.NetworkAvailableCallBack() {
                         @Override
                         public void onNetworkAvailability(List<CellInfo> results) {
                             setReady(true);
@@ -154,32 +158,34 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
         mReady = false;
 
         // Testing startFastNetworkScan, onError should be called with ERROR_INVALID_SCAN
-        mANSNetworkScanCtlr.startFastNetworkScan(subscriptionInfoList);
-        mANSNetworkScanCtlr.mNetworkScanCallback.onError(NetworkScan.ERROR_INVALID_SCAN);
+        mONSNetworkScanCtlr.startFastNetworkScan(availableNetworkInfos);
+        mONSNetworkScanCtlr.mNetworkScanCallback.onError(NetworkScan.ERROR_INVALID_SCAN);
         waitUntilReady(100);
         assertEquals(NetworkScan.ERROR_INVALID_SCAN, mError);
     }
 
     @Test
-    public void testStartSlowNetworkScan() {
-        List<SubscriptionInfo> subscriptionInfoList = new ArrayList<SubscriptionInfo>();
-        SubscriptionInfo subscriptionInfo = new SubscriptionInfo(1, "", 1, "TMO", "TMO", 1, 1,
-                "123", 1, null, "310", "210", "", false, null, "1");
-        subscriptionInfoList.add(subscriptionInfo);
+    public void testStartFastNetworkScanWithMultipleNetworks() {
         List<CellInfo> expectedResults = new ArrayList<CellInfo>();
         CellIdentityLte cellIdentityLte = new CellIdentityLte(310, 210, 1, 1, 1);
         CellInfoLte cellInfoLte = new CellInfoLte();
         cellInfoLte.setCellIdentity(cellIdentityLte);
         expectedResults.add((CellInfo)cellInfoLte);
+        ArrayList<String> mccMncs = new ArrayList<>();
+        mccMncs.add("310210");
+        mccMncs.add("310211");
+        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs);
+        ArrayList<AvailableNetworkInfo> availableNetworkInfos = new ArrayList<AvailableNetworkInfo>();
+        availableNetworkInfos.add(availableNetworkInfo);
         mReady = false;
 
-        // initializing ANSNetworkScanCtlr
+        // initializing ONSNetworkScanCtlr
         new Thread(new Runnable() {
             @Override
             public void run() {
                 Looper.prepare();
-                mANSNetworkScanCtlr = new ANSNetworkScanCtlr(mContext, mMockTelephonyManager,
-                        new ANSNetworkScanCtlr.NetworkAvailableCallBack() {
+                mONSNetworkScanCtlr = new ONSNetworkScanCtlr(mContext, mMockTelephonyManager,
+                        new ONSNetworkScanCtlr.NetworkAvailableCallBack() {
                         @Override
                         public void onNetworkAvailability(List<CellInfo> results) {
                             mResults = results;
@@ -203,33 +209,34 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
         mReady = false;
 
         // Testing startSlowNetworkScan, onNetworkAvailability should be called with expectedResults
-        mANSNetworkScanCtlr.startSlowNetworkScan(subscriptionInfoList);
-        mANSNetworkScanCtlr.mNetworkScanCallback.onResults(expectedResults);
+        mONSNetworkScanCtlr.startFastNetworkScan(availableNetworkInfos);
+        mONSNetworkScanCtlr.mNetworkScanCallback.onResults(expectedResults);
         waitUntilReady(100);
         assertEquals(expectedResults, mResults);
     }
 
     @Test
     public void testStopNetworkScan() {
-        List<SubscriptionInfo> subscriptionInfoList = new ArrayList<SubscriptionInfo>();
-        SubscriptionInfo subscriptionInfo = new SubscriptionInfo(1, "", 1, "TMO", "TMO", 1, 1,
-                "123", 1, null, "310", "210", "", false, null, "1");
-        subscriptionInfoList.add(subscriptionInfo);
         List<CellInfo> expectedResults = new ArrayList<CellInfo>();
         CellIdentityLte cellIdentityLte = new CellIdentityLte(310, 210, 1, 1, 1);
         CellInfoLte cellInfoLte = new CellInfoLte();
         cellInfoLte.setCellIdentity(cellIdentityLte);
         expectedResults.add((CellInfo)cellInfoLte);
+        ArrayList<String> mccMncs = new ArrayList<>();
+        mccMncs.add("310210");
+        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs);
+        ArrayList<AvailableNetworkInfo> availableNetworkInfos = new ArrayList<AvailableNetworkInfo>();
+        availableNetworkInfos.add(availableNetworkInfo);
         mCallbackInvoked = false;
         mReady = false;
 
-        // initializing ANSNetworkScanCtlr
+        // initializing ONSNetworkScanCtlr
         new Thread(new Runnable() {
             @Override
             public void run() {
                 Looper.prepare();
-                mANSNetworkScanCtlr = new ANSNetworkScanCtlr(mContext, mMockTelephonyManager,
-                        new ANSNetworkScanCtlr.NetworkAvailableCallBack() {
+                mONSNetworkScanCtlr = new ONSNetworkScanCtlr(mContext, mMockTelephonyManager,
+                        new ONSNetworkScanCtlr.NetworkAvailableCallBack() {
                         @Override
                         public void onNetworkAvailability(List<CellInfo> results) {
                             mCallbackInvoked = true;
@@ -252,9 +259,9 @@ public class ANSNetworkScanCtlrTest extends ANSBaseTest {
         mReady = false;
 
         // Testing stopNetworkScan, should not get any callback invocation after stopNetworkScan.
-        mANSNetworkScanCtlr.startSlowNetworkScan(subscriptionInfoList);
-        mANSNetworkScanCtlr.stopNetworkScan();
-        mANSNetworkScanCtlr.mNetworkScanCallback.onResults(expectedResults);
+        mONSNetworkScanCtlr.startFastNetworkScan(availableNetworkInfos);
+        mONSNetworkScanCtlr.stopNetworkScan();
+        mONSNetworkScanCtlr.mNetworkScanCallback.onResults(expectedResults);
         waitUntilReady(100);
         assertFalse(mCallbackInvoked);
     }
