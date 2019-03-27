@@ -321,7 +321,8 @@ public class ONSProfileSelector {
     }
 
     private void switchPreferredData(int subId) {
-        mSubscriptionManager.setPreferredDataSubscriptionId(subId);
+        mSubscriptionManager.setPreferredDataSubscriptionId(
+                subId, true, (command) -> {}, null);
         mCurrentDataSubId = subId;
     }
 
@@ -403,6 +404,9 @@ public class ONSProfileSelector {
                 /* if subscription is not active, activate the sub */
                 if (!mSubscriptionManager.isActiveSubId(filteredAvailableNetworks.get(0).getSubId())) {
                     switchToSubscription(filteredAvailableNetworks.get(0).getSubId());
+                } else {
+                    enableModem(filteredAvailableNetworks.get(0).getSubId(), true);
+                    mProfileSelectionCallback.onProfileSelectionDone();
                 }
             } else {
                 /* start scan immediately */
@@ -417,7 +421,7 @@ public class ONSProfileSelector {
 
     private boolean isActiveSub(int subId) {
         List<SubscriptionInfo> subscriptionInfos =
-                mSubscriptionManager.getActiveSubscriptionInfoList();
+                mSubscriptionManager.getActiveSubscriptionInfoList(false);
         for (SubscriptionInfo subscriptionInfo : subscriptionInfos) {
             if (subscriptionInfo.getSubscriptionId() == subId) {
                 return true;
@@ -451,7 +455,7 @@ public class ONSProfileSelector {
 
     private int getActiveOpportunisticSubId() {
         List<SubscriptionInfo> subscriptionInfos =
-            mSubscriptionManager.getActiveSubscriptionInfoList();
+            mSubscriptionManager.getActiveSubscriptionInfoList(false);
         for (SubscriptionInfo subscriptionInfo : subscriptionInfos) {
             if (subscriptionInfo.isOpportunistic()) {
                 return subscriptionInfo.getSubscriptionId();
@@ -530,7 +534,8 @@ public class ONSProfileSelector {
     public boolean selectProfileForData(int subId) {
         if ((subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID)
                 || (isOpprotunisticSub(subId) && isActiveSub(subId))) {
-            mSubscriptionManager.setPreferredDataSubscriptionId(subId);
+            mSubscriptionManager.setPreferredDataSubscriptionId(
+                    subId, true, (command) -> {}, null);
             mCurrentDataSubId = subId;
             return true;
         } else {
