@@ -110,7 +110,8 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
         results2.add((CellInfo)cellInfoLte);
         ArrayList<String> mccMncs = new ArrayList<>();
         mccMncs.add("310210");
-        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs);
+        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs,
+                new ArrayList<Integer>());
         ArrayList<AvailableNetworkInfo> availableNetworkInfos = new ArrayList<AvailableNetworkInfo>();
         availableNetworkInfos.add(availableNetworkInfo);
 
@@ -137,7 +138,7 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
 
         // Testing startProfileSelection without any oppotunistic data.
         // should not get any callback invocation.
-        mONSProfileSelector.startProfileSelection(availableNetworkInfos);
+        mONSProfileSelector.startProfileSelection(availableNetworkInfos, null);
         waitUntilReady(100);
         assertFalse(mCallbackInvoked);
     }
@@ -158,7 +159,8 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
         results2.add((CellInfo)cellInfoLte);
         ArrayList<String> mccMncs = new ArrayList<>();
         mccMncs.add("310210");
-        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs);
+        AvailableNetworkInfo availableNetworkInfo = new AvailableNetworkInfo(1, 1, mccMncs,
+                new ArrayList<Integer>());
         ArrayList<AvailableNetworkInfo> availableNetworkInfos = new ArrayList<AvailableNetworkInfo>();
         availableNetworkInfos.add(availableNetworkInfo);
 
@@ -188,7 +190,7 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
 
         // Testing startProfileSelection with oppotunistic sub.
         // On success onProfileSelectionDone must get invoked.
-        mONSProfileSelector.startProfileSelection(availableNetworkInfos);
+        mONSProfileSelector.startProfileSelection(availableNetworkInfos, null);
         assertFalse(mReady);
         mONSProfileSelector.mNetworkAvailableCallBackCpy.onNetworkAvailability(results2);
         Intent callbackIntent = new Intent(MyONSProfileSelector.ACTION_SUB_SWITCH);
@@ -224,8 +226,7 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
 
         // Testing selectProfileForData with no oppotunistic sub and the function should
         // return false.
-        boolean ret = mONSProfileSelector.selectProfileForData(1);
-        assertFalse(ret);
+        mONSProfileSelector.selectProfileForData(1, false, null);
     }
 
     @Test
@@ -254,8 +255,7 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
         waitUntilReady();
 
         // Testing selectProfileForData with in active sub and the function should return false.
-        boolean ret = mONSProfileSelector.selectProfileForData(5);
-        assertFalse(ret);
+        mONSProfileSelector.selectProfileForData(5, false, null);
     }
 
     @Test
@@ -287,9 +287,8 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
 
         // Testing selectProfileForData with INVALID_SUBSCRIPTION_ID and the function should
         // return true.
-        boolean ret = mONSProfileSelector.selectProfileForData(
-                SubscriptionManager.INVALID_SUBSCRIPTION_ID);
-        assertTrue(ret);
+        mONSProfileSelector.selectProfileForData(
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID, false, null);
     }
 
     @Test
@@ -325,7 +324,6 @@ public class ONSProfileSelectorTest extends ONSBaseTest {
 
         // Testing selectProfileForData with valid opportunistic sub and the function should
         // return true.
-        boolean ret = mONSProfileSelector.selectProfileForData(5);
-        assertTrue(ret);
+        mONSProfileSelector.selectProfileForData(5, false, null);
     }
 }
