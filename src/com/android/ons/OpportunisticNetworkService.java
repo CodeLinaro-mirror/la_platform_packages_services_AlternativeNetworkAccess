@@ -134,18 +134,18 @@ public class OpportunisticNetworkService extends Service {
 
         logDebug("Carrier subscription is not available, removing entry");
         mONSConfigInputHashMap.put(CARRIER_APP_CONFIG_NAME, null);
-        if (mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME).getAvailableNetworkInfos() != null) {
+        if (!mIsEnabled) {
+            return;
+        }
+        if (mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME) != null) {
             mProfileSelector.startProfileSelection(
                     mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME).getAvailableNetworkInfos(),
                     mONSConfigInputHashMap.get(
                             SYSTEM_APP_CONFIG_NAME).getAvailableNetworkCallback());
         } else {
-            mProfileSelector.stopProfileSelection();
-            sendUpdateNetworksCallbackHelper(mONSConfigInputHashMap.get(
-                    SYSTEM_APP_CONFIG_NAME).getAvailableNetworkCallback(),
-                    TelephonyManager.UPDATE_AVAILABLE_NETWORKS_SUCCESS);
+            mProfileSelector.stopProfileSelection(mONSConfigInputHashMap.get(
+                    SYSTEM_APP_CONFIG_NAME).getAvailableNetworkCallback());
         }
-        return;
     }
 
     private boolean hasOpportunisticSubPrivilege(String callingPackage, int subId) {
@@ -402,8 +402,10 @@ public class OpportunisticNetworkService extends Service {
                 onsConfigInput.setPreferredDataSub(availableNetworks.get(0).getSubId());
                 mONSConfigInputHashMap.put(CARRIER_APP_CONFIG_NAME, onsConfigInput);
 
-                /* if carrier is reporting availability, then it takes higher priority. */
-                mProfileSelector.startProfileSelection(availableNetworks, callbackStub);
+                if (mIsEnabled) {
+                    /*  if carrier is reporting availability, then it takes higher priority. */
+                    mProfileSelector.startProfileSelection(availableNetworks, callbackStub);
+                }
             } finally {
                 Binder.restoreCallingIdentity(identity);
             }
@@ -411,6 +413,11 @@ public class OpportunisticNetworkService extends Service {
             final long identity = Binder.clearCallingIdentity();
             try {
                 mONSConfigInputHashMap.put(CARRIER_APP_CONFIG_NAME, null);
+                if (!mIsEnabled) {
+                    sendUpdateNetworksCallbackHelper(callbackStub,
+                        TelephonyManager.UPDATE_AVAILABLE_NETWORKS_SUCCESS);
+                    return;
+                }
                 /* if carrier is reporting unavailability, then decide whether to start
                    system app request or not. */
                 if (mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME) != null) {
@@ -422,9 +429,7 @@ public class OpportunisticNetworkService extends Service {
                             mONSConfigInputHashMap.get(
                                     SYSTEM_APP_CONFIG_NAME).getAvailableNetworkCallback());
                 } else {
-                    mProfileSelector.stopProfileSelection();
-                    sendUpdateNetworksCallbackHelper(callbackStub,
-                            TelephonyManager.UPDATE_AVAILABLE_NETWORKS_SUCCESS);
+                    mProfileSelector.stopProfileSelection(callbackStub);
                 }
             } finally {
                 Binder.restoreCallingIdentity(identity);
@@ -458,17 +463,20 @@ public class OpportunisticNetworkService extends Service {
                         new ONSConfigInput(availableNetworks, callbackStub));
 
                 /* reporting availability. proceed if carrier app has not requested any */
-                if (mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME) == null) {
+                if (mIsEnabled && mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME) == null) {
                     mProfileSelector.startProfileSelection(availableNetworks, callbackStub);
                 }
             } else {
-                /* reporting unavailability */
-                mONSConfigInputHashMap.put(
-                        SYSTEM_APP_CONFIG_NAME, new ONSConfigInput(null, callbackStub));
-                if (mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME) == null) {
-                    mProfileSelector.stopProfileSelection();
+                if (!mIsEnabled) {
+                    mONSConfigInputHashMap.put(SYSTEM_APP_CONFIG_NAME, null);
                     sendUpdateNetworksCallbackHelper(callbackStub,
-                            TelephonyManager.UPDATE_AVAILABLE_NETWORKS_SUCCESS);
+                        TelephonyManager.UPDATE_AVAILABLE_NETWORKS_SUCCESS);
+                    return;
+                }
+                /* reporting unavailability */
+                mONSConfigInputHashMap.put(SYSTEM_APP_CONFIG_NAME, null);
+                if (mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME) == null) {
+                    mProfileSelector.stopProfileSelection(callbackStub);
                 }
             }
         } finally {
@@ -495,7 +503,25 @@ public class OpportunisticNetworkService extends Service {
             if (mIsEnabled != enable) {
                 updateEnableState(enable);
                 if (!mIsEnabled) {
-                    mProfileSelector.stopProfileSelection();
+                    mProfileSelector.stopProfileSelection(null);
+                } else {
+                    if (mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME) != null &&
+                        mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME)
+                            .getAvailableNetworkInfos() != null) {
+                        mProfileSelector.startProfileSelection(
+                            mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME)
+                                .getAvailableNetworkInfos(),
+                            mONSConfigInputHashMap.get(
+                                CARRIER_APP_CONFIG_NAME).getAvailableNetworkCallback());
+                    } else if (mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME) != null &&
+                        mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME)
+                            .getAvailableNetworkInfos() != null) {
+                        mProfileSelector.startProfileSelection(
+                            mONSConfigInputHashMap.get(SYSTEM_APP_CONFIG_NAME)
+                                .getAvailableNetworkInfos(),
+                            mONSConfigInputHashMap.get(
+                                SYSTEM_APP_CONFIG_NAME).getAvailableNetworkCallback());
+                    }
                 }
             }
         }
