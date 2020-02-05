@@ -28,6 +28,6 @@ android_test {
     ],
     platform_apis: true,
     certificate: "platform",
-    instrumentation_for: "ONS",
+    instrumentation_for: "ONSLib",
     test_suites: ["device-tests"],
 }
