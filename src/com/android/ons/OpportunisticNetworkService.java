@@ -60,6 +60,7 @@ public class OpportunisticNetworkService extends Service {
     @VisibleForTesting protected Context mContext;
     private TelephonyManager mTelephonyManager;
     @VisibleForTesting protected SubscriptionManager mSubscriptionManager;
+    private ONSProfileActivator mONSProfileActivator;
 
     private final Object mLock = new Object();
     @VisibleForTesting protected boolean mIsEnabled;
@@ -133,6 +134,8 @@ public class OpportunisticNetworkService extends Service {
     @VisibleForTesting
     protected void handleSimStateChange() {
         logDebug("SIM state changed");
+        mONSProfileActivator.handleSimStateChange();
+
         ONSConfigInput carrierAppConfigInput = mONSConfigInputHashMap.get(CARRIER_APP_CONFIG_NAME);
         if (carrierAppConfigInput == null) {
             return;
@@ -393,6 +396,7 @@ public class OpportunisticNetworkService extends Service {
         mContext.registerReceiver(mBroadcastReceiver,
             new IntentFilter(TelephonyIntents.ACTION_SIM_STATE_CHANGED));
         enableOpportunisticNetwork(getPersistentEnableState());
+        mONSProfileActivator = new ONSProfileActivator(mContext, mSubscriptionManager);
     }
 
     private void handleCarrierAppAvailableNetworks(
@@ -529,6 +533,10 @@ public class OpportunisticNetworkService extends Service {
         }
     }
 
+    private boolean getPersistentEnableState() {
+        return mSharedPref.getBoolean(PREF_ENABLED, true);
+    }
+
     private void handleSystemAppAvailableNetworks(
             ArrayList<AvailableNetworkInfo> availableNetworks,
             IUpdateAvailableNetworksCallback callbackStub) {
@@ -592,10 +600,6 @@ public class OpportunisticNetworkService extends Service {
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
-    }
-
-    private boolean getPersistentEnableState() {
-        return mSharedPref.getBoolean(PREF_ENABLED, true);
     }
 
     private void updateEnableState(boolean enable) {
