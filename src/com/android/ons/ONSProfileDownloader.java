@@ -54,14 +54,17 @@ public class ONSProfileDownloader {
     private final ONSProfileConfigurator mONSProfileConfig;
     private IONSProfileDownloaderListener mListener;
 
+    // Subscription Id of the CBRS PSIM for which opportunistic eSIM is being downloaded. Used to
+    // ignore duplicate download requests when download is in progress.
+    private int mDownloadingPSimSubId;
+
     @VisibleForTesting
     protected enum DownloadRetryOperationCode{
         DOWNLOAD_SUCCESSFUL,
         ERR_UNRESOLVABLE,
         ERR_MEMORY_FULL,
         ERR_INSTALL_ESIM_PROFILE_FAILED,
-        ERR_RETRY_DOWNLOAD,
-        BACKOFF_TIMER_EXPIRED
+        ERR_RETRY_DOWNLOAD
     };
 
     public ONSProfileDownloader(Context context, CarrierConfigManager carrierConfigManager,
@@ -85,8 +88,16 @@ public class ONSProfileDownloader {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
-                case REQUEST_CODE_DOWNLOAD_SUB: { //arg1 -> ResultCode
+                // Received Response for download request. REQUEST_CODE_DOWNLOAD_SUB was sent to LPA
+                // as part of request intent.
+                case REQUEST_CODE_DOWNLOAD_SUB: {
                     Log.d(TAG, "REQUEST_CODE_DOWNLOAD_SUB callback received");
+
+                    //Clear downloading subscription flag. Indicates no download in progress.
+                    synchronized (this) {
+                        mDownloadingPSimSubId = -1;
+                    }
+
                     int pSIMSubId = ((Intent) msg.obj).getIntExtra(PARAM_PRIMARY_SUBID, 0);
                     int detailedErrCode = ((Intent) msg.obj).getIntExtra(
                             EuiccManager.EXTRA_EMBEDDED_SUBSCRIPTION_DETAILED_CODE, 0);
@@ -129,37 +140,11 @@ public class ONSProfileDownloader {
                                                                     int operationCode,
                                                                     int errorCode) {
 
-            if (operationCode == EuiccManager.OPERATION_DOWNLOAD) {
-
-                //Success Cases
-                if (resultCode == EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK) {
-                    return DownloadRetryOperationCode.DOWNLOAD_SUCCESSFUL;
-                }
-
-                //Low eUICC memory cases
-                if (errorCode == EuiccManager.ERROR_EUICC_INSUFFICIENT_MEMORY) {
-                    Log.d(TAG, "Download ERR: EUICC_INSUFFICIENT_MEMORY");
-                    return DownloadRetryOperationCode.ERR_MEMORY_FULL;
-                }
-
-                //Temporary download error cases
-                if (errorCode == EuiccManager.ERROR_TIME_OUT
-                        || errorCode == EuiccManager.ERROR_CONNECTION_ERROR
-                        || errorCode == EuiccManager.ERROR_OPERATION_BUSY) {
-                    return DownloadRetryOperationCode.ERR_RETRY_DOWNLOAD;
-                }
-
-                //Profile installation failure cases
-                if (errorCode == EuiccManager.ERROR_INSTALL_PROFILE) {
-                    return DownloadRetryOperationCode.ERR_INSTALL_ESIM_PROFILE_FAILED;
-                }
-
-                //UnResolvable error cases
-                return DownloadRetryOperationCode.ERR_UNRESOLVABLE;
-
-            } else if (operationCode == EuiccManager.OPERATION_SMDX_SUBJECT_REASON_CODE) {
+            if (operationCode == EuiccManager.OPERATION_SMDX_SUBJECT_REASON_CODE) {
                 //SMDP Error codes handling
                 Pair<String, String> errCode = decodeSmdxSubjectAndReasonCode(detailedErrCode);
+                Log.e(TAG, " Subject Code: " + errCode.first + " Reason Code: "
+                        + errCode.second);
 
                 //8.1 - eUICC, 4.8 - Insufficient Memory
                 // eUICC does not have sufficient space for this Profile.
@@ -176,10 +161,36 @@ public class ONSProfileDownloader {
                 //All other errors are unresolvable or retry after SIM State Change
                 return DownloadRetryOperationCode.ERR_UNRESOLVABLE;
 
-            } else {
-                //Ignore if Operation code is not DOWNLOAD or SMDX_SUBJECT_REASON_CODE.
-                //Callback is registered only for download requests.
-                return DownloadRetryOperationCode.ERR_UNRESOLVABLE;
+            }
+
+            switch (errorCode) {
+
+                //Success Cases
+                case EuiccManager.EMBEDDED_SUBSCRIPTION_RESULT_OK: {
+                    return DownloadRetryOperationCode.DOWNLOAD_SUCCESSFUL;
+                }
+
+                //Low eUICC memory cases
+                case EuiccManager.ERROR_EUICC_INSUFFICIENT_MEMORY: {
+                    Log.d(TAG, "Download ERR: EUICC_INSUFFICIENT_MEMORY");
+                    return DownloadRetryOperationCode.ERR_MEMORY_FULL;
+                }
+
+                //Temporary download error cases
+                case EuiccManager.ERROR_TIME_OUT:
+                case EuiccManager.ERROR_CONNECTION_ERROR:
+                case EuiccManager.ERROR_OPERATION_BUSY: {
+                    return DownloadRetryOperationCode.ERR_RETRY_DOWNLOAD;
+                }
+
+                //Profile installation failure cases
+                case EuiccManager.ERROR_INSTALL_PROFILE: {
+                    return DownloadRetryOperationCode.ERR_INSTALL_ESIM_PROFILE_FAILED;
+                }
+
+                default: {
+                    return DownloadRetryOperationCode.ERR_UNRESOLVABLE;
+                }
             }
         }
     }
@@ -215,13 +226,29 @@ public class ONSProfileDownloader {
     }
 
     @VisibleForTesting
-    protected void downloadProfile(int primarySubId) {
+    protected enum DownloadProfileResult {
+        SUCCESS,
+        DUPLICATE_REQUEST,
+        INVALID_SMDP_ADDRESS
+    }
+
+    @VisibleForTesting
+    protected DownloadProfileResult downloadProfile(int primarySubId) {
         Log.d(TAG, "downloadProfile");
+
+        synchronized (this) {
+            if (mDownloadingPSimSubId == primarySubId) {
+                Log.d(TAG, "Download already in progress.");
+                return DownloadProfileResult.DUPLICATE_REQUEST;
+            }
+
+            mDownloadingPSimSubId = primarySubId;
+        }
 
         //Get SMDP address from carrier configuration.
         String smdpAddress = getSMDPServerAddress(primarySubId);
         if (smdpAddress == null || smdpAddress.length() <= 0) {
-            return;
+            return DownloadProfileResult.INVALID_SMDP_ADDRESS;
         }
 
         //Generate Activation code 1${SM-DP+ FQDN}$
@@ -236,6 +263,8 @@ public class ONSProfileDownloader {
         Log.d(TAG, "Download Request sent to EUICC Manager");
         mEuiccManager.downloadSubscription(DownloadableSubscription.forActivationCode(
                 activationCode), true, callbackIntent);
+
+        return DownloadProfileResult.SUCCESS;
     }
 
     /**
