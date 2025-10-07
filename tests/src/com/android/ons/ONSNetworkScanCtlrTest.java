@@ -32,6 +32,8 @@ import android.telephony.NetworkScanRequest;
 import android.telephony.RadioAccessSpecifier;
 import android.telephony.SubscriptionInfo;
 
+import com.android.internal.telephony.flags.Flags;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -60,6 +62,16 @@ public class ONSNetworkScanCtlrTest extends ONSBaseTest {
     private static final RadioAccessSpecifier TEST_4G_RAS = new RadioAccessSpecifier(
             AccessNetworkConstants.AccessNetworkType.EUTRAN,
             new int[] {AccessNetworkConstants.EutranBand.BAND_48},
+            null);
+    // RadioAccessSpecifier with 5G RAN only (no bands or channels)
+    private static final RadioAccessSpecifier TEST_5G_RAS_WITH_RAN_ONLY = new RadioAccessSpecifier(
+            AccessNetworkConstants.AccessNetworkType.NGRAN,
+            null,
+            null);
+    // RadioAccessSpecifier with 4G RAN only (no bands or channels)
+    private static final RadioAccessSpecifier TEST_4G_RAS_WITH_RAN_ONLY = new RadioAccessSpecifier(
+            AccessNetworkConstants.AccessNetworkType.EUTRAN,
+            null,
             null);
 
     @Before
@@ -288,6 +300,24 @@ public class ONSNetworkScanCtlrTest extends ONSBaseTest {
         assertEquals(radioAccessSpecifiers[0], TEST_5G_RAS);
     }
 
+    @Test
+    public void testCreateNetworkScanRequest_with4gAnd5gRASWithRanOnly_4gScanEnabled() {
+        initONSNetworkScanCtrl();
+        mONSNetworkScanCtlr.setIs4gScanEnabled(true);
+
+        NetworkScanRequest networkScanRequest = createNetworkScanRequest(
+                new ArrayList<>(
+                        Arrays.asList(TEST_5G_RAS_WITH_RAN_ONLY, TEST_4G_RAS_WITH_RAN_ONLY)));
+        RadioAccessSpecifier[] radioAccessSpecifiers = networkScanRequest.getSpecifiers();
+
+        assertEquals(networkScanRequest.getSearchPeriodicity(), SEARCH_PERIODICITY);
+        assertEquals(networkScanRequest.getPlmns().size(), 1);
+        assertEquals(networkScanRequest.getPlmns().get(0), "310210");
+        assertEquals(radioAccessSpecifiers.length, 2);
+        assertEquals(radioAccessSpecifiers[0], ONSNetworkScanCtlr.DEFAULT_5G_RAS);
+        assertEquals(radioAccessSpecifiers[1], ONSNetworkScanCtlr.DEFAULT_4G_RAS);
+    }
+
     private NetworkScanRequest createNetworkScanRequest(ArrayList<RadioAccessSpecifier> ras) {
         AvailableNetworkInfo availableNetworkInfo =
                 new AvailableNetworkInfo.Builder(TEST_SUBSCRIPTION_INFO.getSubscriptionId())
@@ -338,7 +368,11 @@ public class ONSNetworkScanCtlrTest extends ONSBaseTest {
 
     @Test
     public void testGetMncMccFromCellInfoNr() {
-        mONSNetworkScanCtlr = new ONSNetworkScanCtlr(mContext, mMockTelephonyManager, null);
+        if (!Flags.onsThreadConsolidation()) {
+            mONSNetworkScanCtlr = new ONSNetworkScanCtlr(mContext, mMockTelephonyManager, null);
+        } else {
+            initONSNetworkScanCtrl();
+        }
 
         CellIdentityNr cellIdentityNr = new CellIdentityNr(0, 0, 0, new int[]{0}, "111", "222", 0,
                 "", "",  Collections.emptyList());
