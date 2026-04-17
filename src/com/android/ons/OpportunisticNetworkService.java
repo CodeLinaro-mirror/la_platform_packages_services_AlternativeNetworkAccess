@@ -618,10 +618,12 @@ public class OpportunisticNetworkService extends Service {
                     break;
 
                     case ONSProfileDownloader.ACTION_ONS_ESIM_DOWNLOAD: {
-                        mONSProfileActivator.getONSProfileDownloader().onCallbackIntentReceived(
+                        if (!Flags.enableOnsCleanup()) {
+                            mONSProfileActivator.getONSProfileDownloader().onCallbackIntentReceived(
                                 mIntent.getParcelableExtra(Intent.EXTRA_INTENT),
                                 mIntent.getIntExtra(ONSProfileResultReceiver.EXTRA_RESULT_CODE, 0)
-                        );
+                            );
+                        }
                     }
                     break;
 
@@ -667,9 +669,6 @@ public class OpportunisticNetworkService extends Service {
                 PREF_NAME, Context.MODE_PRIVATE);
         mSubscriptionManager = (SubscriptionManager) mContext.getSystemService(
                 Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-        if (Flags.workProfileApiSplit()) {
-            mSubscriptionManager = mSubscriptionManager.createForAllUserProfiles();
-        }
         mONSConfigInputHashMap = new HashMap<String, ONSConfigInput>();
         mONSStats = new ONSStats(mContext, mSubscriptionManager);
         mContext.registerReceiver(mBroadcastReceiver,
